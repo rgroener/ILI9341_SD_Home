@@ -1,0 +1,22 @@
+
+
+
+
+Temperature Measurement Issue
+
+There could be a problem with temperature measurement of the DPS310. If your DPS310 indicates a temperature around 60 °C although you expect around room temperature, e.g. 20 °C, 
+please call the function correctTemp() as included in the library to fix this issue.
+
+	//Korrekturwerte für falsche Temperaturwerte (2-fach normaler Temp Wert)
+	// Quelle: https://github.com/Infineon/DPS310-Pressure-Sensor
+		
+		DPS310_write(0x0E, 0xA5);
+		DPS310_write(0x0F, 0x96);
+		DPS310_write(0x62, 0x02);
+		DPS310_write(0x0E, 0x00);
+		DPS310_write(0x0F, 0x00);
+
+In case you need additional help, please do not hesitate to open an issue in this repository.
+Interrupt mode
+
+Interrupt mode not working reliably on XMC2Go for DPS310 right now.
