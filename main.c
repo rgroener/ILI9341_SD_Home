@@ -84,6 +84,12 @@
 #define PRES_READY_CHECK (DPS310_read(MEAS_CFG) & (1<<4)) != 0
 
 #define JOY_PUSH !(PINC & (1<<PC0)) && (entprell == 0)
+#define JOY_HOR ReadADC(2)
+#define JOY_VERT ReadADC(1)
+#define LEFT > 600
+#define RIGHT <400
+#define DOWN > 600
+#define UP <400
 
 
 extern uint16_t vsetx,vsety,vactualx,vactualy,isetx,isety,iactualx,iactualy;
@@ -142,6 +148,12 @@ uint32_t DPS310_get_sc_temp(uint8_t oversampling);
 long DPS310_get_temp(uint8_t oversampling);
 double DPS310_get_pres(uint8_t t_ovrs, uint8_t p_ovrs);
 
+
+
+
+
+
+
 //Prototypen SD-Card
 static uint8_t read_line(char* buffer, uint8_t buffer_length);
 static uint32_t strtolong(const char* str);
@@ -176,6 +188,54 @@ long calcalt(double press, uint32_t pressealevel);
 
 uint16_t vor_komma(uint32_t value);
 uint8_t nach_komma(uint32_t value);
+uint16_t ReadADC(uint8_t ADCchannel)
+{
+ //select ADC channel with safety mask
+ ADMUX = (ADMUX & 0xF0) | (ADCchannel & 0x0F);
+ //single conversion mode
+ ADCSRA |= (1<<ADSC);
+ // wait until ADC conversion is complete
+ while( ADCSRA & (1<<ADSC) );
+ return ADC;
+}
+
+void showADC(void)//show output of ADC 1 + 2
+{
+	Temperature=ReadADC(1);
+	ili9341_setcursor(10,20);
+	printf("ADC1: %d", Temperature);
+	Temperature=ReadADC(2);
+	ili9341_setcursor(10,40);
+	printf("ADC2: %d", Temperature);
+	ili9341_setcursor(10,0);
+		//push button
+		if(JOY_PUSH && (!entprell))
+		{
+			printf("PUSH");
+		}
+		//horizontal
+		if(JOY_HOR LEFT)
+		{
+			printf("LEFT");
+		}else if(JOY_HOR RIGHT)
+		{
+			printf("RIGHT");
+		}
+		//vertical
+		if(JOY_VERT UP)
+		{
+			printf("UP");
+		}else if(JOY_VERT DOWN)
+		{
+			printf("DOWN");
+		}
+		if((JOY_HOR < 600) && (JOY_HOR>400) && (JOY_VERT<600) && (JOY_VERT>400) && !JOY_PUSH)
+		{
+			ili9341_setcursor(10,0);
+			printf("     ");
+		}
+	
+}
 
 int main(void)
 {
@@ -209,6 +269,17 @@ int main(void)
     //Set interrupt on compare match
     TCCR1B |= (1 << CS12) | (1 << CS10);
     // set prescaler to 1024 and start the timer
+    
+    //ADC
+    // Select Vref=AVcc
+	ADMUX |= (1<<REFS0);
+	//set prescaller to 128 and enable ADC 
+	ADCSRA |= (1<<ADPS2)|(1<<ADPS1)|(1<<ADPS0)|(1<<ADEN);
+    
+    
+    
+    
+    
     sei();
     // enable interrupts
 	
@@ -221,15 +292,6 @@ int main(void)
 	{
 		
 		
-		if(JOY_PUSH && (!entprell))
-		{
-			ili9341_setcursor(50,50);
-			printf("push");
-		}else 
-		{
-			ili9341_setcursor(50,50);
-			printf("    ");
-		}
 		
 		
 		if(1)
@@ -237,6 +299,9 @@ int main(void)
 			messung=0;	
 			if(TEMP_READY_CHECK)
 			{
+				showADC();
+			
+				
 				Temperature=DPS310_get_temp(temp_ovs);
 				ili9341_setcursor(10,120);
 				printf("T: %d C", Temperature);
