@@ -11,6 +11,8 @@
 #include "grn_TWI.h"
 #include <avr/interrupt.h>
 
+#include "uart.h"
+
 #define DPS310_W 0xee
 #define DPS310_R 0xef
 #define PRS_B2	0x00
@@ -158,6 +160,7 @@ uint8_t nach_komma(uint32_t value);
 int main(void)
 {
 	init_ili9341();
+	uart_init();
 	//display_init();//display initial data
 	yy=240;
 	xx=0;
@@ -188,11 +191,12 @@ int main(void)
 	
 	
 	DPS310_init(ULTRA);
-	_delay_ms(30);
+	
 	
 	while(1)
 	{
-		
+		_delay_ms(30);
+	uart_puts_p(PSTR("test\n"));
 		if(1)
 		{	
 			messung=0;	
