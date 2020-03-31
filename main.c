@@ -91,12 +91,34 @@
 #define DOWN > 600
 #define UP <400
 
+//SD Card Actions
+#define NOT_USED 0
+#define CLOSE 1
+#define CLOSED 2
+#define OPEN 3
+#define OPENED 4 
+#define WRITE 5
+#define WRITING 6
+#define SYNC 7
+#define SYNCED 8
+#define COMMUNICATE 9
+#define COMMUNICATING 10
+#define CHECK 11			//check Status
+
+
+
+
+
+
+
 
 extern uint16_t vsetx,vsety,vactualx,vactualy,isetx,isety,iactualx,iactualy;
 static FILE mydata = FDEV_SETUP_STREAM(ili9341_putchar_printf, NULL, _FDEV_SETUP_WRITE);
 uint8_t result,  xpos, error, x, value, rdy;
 uint16_t xx, yy, zell, COLOR, var_x,color;
 uint8_t messung=1;
+
+
 
 uint8_t sd_com; //flag sd card communication via uart on / off
 
@@ -148,12 +170,6 @@ uint32_t DPS310_get_sc_temp(uint8_t oversampling);
 long DPS310_get_temp(uint8_t oversampling);
 double DPS310_get_pres(uint8_t t_ovrs, uint8_t p_ovrs);
 
-
-
-
-
-
-
 //Prototypen SD-Card
 static uint8_t read_line(char* buffer, uint8_t buffer_length);
 static uint32_t strtolong(const char* str);
@@ -188,54 +204,116 @@ long calcalt(double press, uint32_t pressealevel);
 
 uint16_t vor_komma(uint32_t value);
 uint8_t nach_komma(uint32_t value);
-uint16_t ReadADC(uint8_t ADCchannel)
+uint16_t ReadADC(uint8_t ADCchannel);
+void showADC(void);
+void showSD(uint8_t stat);
+uint8_t sd_card(const char * sddata, uint8_t action)
 {
- //select ADC channel with safety mask
- ADMUX = (ADMUX & 0xF0) | (ADCchannel & 0x0F);
- //single conversion mode
- ADCSRA |= (1<<ADSC);
- // wait until ADC conversion is complete
- while( ADCSRA & (1<<ADSC) );
- return ADC;
-}
-
-void showADC(void)//show output of ADC 1 + 2
-{
-	Temperature=ReadADC(1);
-	ili9341_setcursor(10,20);
-	printf("ADC1: %d", Temperature);
-	Temperature=ReadADC(2);
-	ili9341_setcursor(10,40);
-	printf("ADC2: %d", Temperature);
-	ili9341_setcursor(10,0);
-		//push button
-		if(JOY_PUSH && (!entprell))
-		{
-			printf("PUSH");
-		}
-		//horizontal
-		if(JOY_HOR LEFT)
-		{
-			printf("LEFT");
-		}else if(JOY_HOR RIGHT)
-		{
-			printf("RIGHT");
-		}
-		//vertical
-		if(JOY_VERT UP)
-		{
-			printf("UP");
-		}else if(JOY_VERT DOWN)
-		{
-			printf("DOWN");
-		}
-		if((JOY_HOR < 600) && (JOY_HOR>400) && (JOY_VERT<600) && (JOY_VERT>400) && !JOY_PUSH)
-		{
-			ili9341_setcursor(10,0);
-			printf("     ");
-		}
+	//when close != 0, sd_card can be closed
+	//else sd_card can be opened or be written
 	
-}
+//	static uint8_t error=0;
+	static uint8_t str_len=0;
+	
+	static struct partition_struct* partition;
+	static struct fat_fs_struct* fs;
+	static struct fat_dir_struct* dd;
+	static struct fat_file_struct* fd;
+	struct fat_dir_entry_struct directory;
+	static uint8_t sd_status=CLOSED; //present status of SD Card open / closed / writing...
+	
+	//#define SD_OPEN  0
+	//#define SD_WRITE 1
+	//#define SD_CLOSE 2
+	
+	//if(close)action=SD_CLOSE;//close sd-card
+	
+	/* To add globaly
+	 * //SD Card Actions
+		#define NOT_USED 0
+		#define CLOSE 1
+		#define CLOSED 2
+		#define OPEN 3
+		#define OPENED 4 
+		#define WRITE 5
+		#define WRITING 6
+		#define SYNC 7
+		#define SYNCED 8
+	*/
+	
+	
+	switch(action)
+	{
+		case OPEN:	if(sd_status==CLOSED)// do only if closed
+					{
+							/* setup sd card slot */
+							if(!sd_raw_init())
+							{
+								uart_puts_p(PSTR("MMC/SD initialization failed\n"));
+							}
+
+							/* open first partition */
+							partition = partition_open(sd_raw_read,sd_raw_read_interval,sd_raw_write,sd_raw_write_interval,0);
+
+							if(!partition)
+							{
+								/* If the partition did not open, assume the storage device
+								 * is a "superfloppy", i.e. has no MBR.
+								 */
+								partition = partition_open(sd_raw_read,sd_raw_read_interval,sd_raw_write,sd_raw_write_interval,-1);
+								if(!partition)
+								{
+									uart_puts_p(PSTR("opening partition failed\n"));
+								}
+							}
+
+							/* open file system */
+							struct fat_fs_struct* fs = fat_open(partition);
+							if(!fs)
+							{
+								uart_puts_p(PSTR("opening filesystem failed\n"));
+							}
+
+							/* open root directory */
+							fat_get_dir_entry_of_path(fs, "/", &directory);
+							dd = fat_open_dir(fs, &directory);
+							if(!dd)
+							{
+								uart_puts_p(PSTR("opening root directory failed\n"));
+							}
+									
+							/* print some card information as a boot message */
+							print_disk_info(fs);
+							sd_status=OPENED;
+						}else uart_puts_p(PSTR("SD Card already open\n"));
+						break;
+		case WRITE:	// file_pos now contains the absolute file position
+						//sprintf(string,"eins");
+						str_len=strlen((const char *)sddata);
+						fat_write_file(fd,(const uint8_t*)sddata,str_len);
+						sd_raw_sync();
+						//uart_puts("  writing sucessfull\n");
+						break;
+		case CLOSE:		if(sd_status==OPENED)
+						{
+							/*sync data... just to be save...*/
+							sd_raw_sync();
+							/* close directory */
+							fat_close_dir(dd);
+							/* close file system */
+							fat_close(fs);
+							/* close partition */
+							partition_close(partition);
+							
+							uart_puts_p(PSTR("SD Card is closed\n"));
+							sd_status=CLOSED;
+						}else uart_puts_p(PSTR("SD Card already closed\n"));
+						break;
+	}//end of switch
+	showSD(sd_status);
+	return sd_status;
+}//end of sd_card()
+
 
 int main(void)
 {
@@ -260,6 +338,7 @@ int main(void)
 	tt=0;
 	log_pos=0;
 	qnh=101525;
+	
 	TWIInit();
 	//Timer 1 Configuration
 	OCR1A = 0x009C;	//OCR1A = 0x3D08;==1sec
@@ -275,25 +354,17 @@ int main(void)
 	ADMUX |= (1<<REFS0);
 	//set prescaller to 128 and enable ADC 
 	ADCSRA |= (1<<ADPS2)|(1<<ADPS1)|(1<<ADPS0)|(1<<ADEN);
-    
-    
-    
-    
-    
+        
     sei();
     // enable interrupts
-	
-	
+		
 	DPS310_init(ULTRA);
-	    /* we will just use ordinary idle mode */
+	
+	/* we will just use ordinary idle mode */
     set_sleep_mode(SLEEP_MODE_IDLE);
 	
 	while(1)
 	{
-		
-		
-		
-		
 		if(1)
 		{	
 			messung=0;	
@@ -320,342 +391,19 @@ int main(void)
 				tt++;
 			}
 		}//end of messung
+		if(JOY_PUSH && (!entprell))
+		{
+			ili9341_setcursor(10,0);
+			printf("PUSH");
+			if(sd_card("n",CHECK)==CLOSED)
+			{
+				sd_card("",OPEN);
+			}else if(sd_card("n",CHECK)==OPENED)sd_card("b",CLOSE);
+		}
 	
 	
-ili9341_settextsize(2);
-if(sd_com==1)//enable / disable communication with sd card via uart
-{
-	// SD Card communication
-	 /* setup sd card slot */
-			if(!sd_raw_init())
-			{
-	#if DEBUG
-				uart_puts_p(PSTR("MMC/SD initialization failed\n"));
-	#endif
-				continue;
-			}
 
-			/* open first partition */
-			struct partition_struct* partition = partition_open(sd_raw_read,
-																sd_raw_read_interval,
-	#if SD_RAW_WRITE_SUPPORT
-																sd_raw_write,
-																sd_raw_write_interval,
-	#else
-																0,
-																0,
-	#endif
-																0
-															   );
-
-			if(!partition)
-			{
-				/* If the partition did not open, assume the storage device
-				 * is a "superfloppy", i.e. has no MBR.
-				 */
-				partition = partition_open(sd_raw_read,
-										   sd_raw_read_interval,
-	#if SD_RAW_WRITE_SUPPORT
-										   sd_raw_write,
-										   sd_raw_write_interval,
-	#else
-										   0,
-										   0,
-	#endif
-										   -1
-										  );
-				if(!partition)
-				{
-	#if DEBUG
-					uart_puts_p(PSTR("opening partition failed\n"));
-	#endif
-					continue;
-				}
-			}
-
-			/* open file system */
-			struct fat_fs_struct* fs = fat_open(partition);
-			if(!fs)
-			{
-	#if DEBUG
-				uart_puts_p(PSTR("opening filesystem failed\n"));
-	#endif
-				continue;
-			}
-
-			/* open root directory */
-			struct fat_dir_entry_struct directory;
-			fat_get_dir_entry_of_path(fs, "/", &directory);
-
-			struct fat_dir_struct* dd = fat_open_dir(fs, &directory);
-			if(!dd)
-			{
-	#if DEBUG
-				uart_puts_p(PSTR("opening root directory failed\n"));
-	#endif
-				continue;
-			}
-			
-			/* print some card information as a boot message */
-			print_disk_info(fs);
-
-			/* provide a simple shell */
-			char buffer[24];
-			while(1)
-			{
-				/* print prompt */
-				uart_putc('>');
-				uart_putc(' ');
-
-				/* read command */
-				char* command = buffer;
-				if(read_line(command, sizeof(buffer)) < 1)
-					continue;
-
-				/* execute command */
-				if(strcmp_P(command, PSTR("init")) == 0)
-				{
-					break;
-				}
-				else if(strncmp_P(command, PSTR("cd "), 3) == 0)
-				{
-					command += 3;
-					if(command[0] == '\0')
-						continue;
-
-					/* change directory */
-					struct fat_dir_entry_struct subdir_entry;
-					if(find_file_in_dir(fs, dd, command, &subdir_entry))
-					{
-						struct fat_dir_struct* dd_new = fat_open_dir(fs, &subdir_entry);
-						if(dd_new)
-						{
-							fat_close_dir(dd);
-							dd = dd_new;
-							continue;
-						}
-					}
-
-					uart_puts_p(PSTR("directory not found: "));
-					uart_puts(command);
-					uart_putc('\n');
-				}
-				else if(strcmp_P(command, PSTR("ls")) == 0)
-				{
-					/* print directory listing */
-					struct fat_dir_entry_struct dir_entry;
-					while(fat_read_dir(dd, &dir_entry))
-					{
-						uint8_t spaces = sizeof(dir_entry.long_name) - strlen(dir_entry.long_name) + 4;
-
-						uart_puts(dir_entry.long_name);
-						uart_putc(dir_entry.attributes & FAT_ATTRIB_DIR ? '/' : ' ');
-						while(spaces--)
-							uart_putc(' ');
-						uart_putdw_dec(dir_entry.file_size);
-						uart_putc('\n');
-					}
-				}
-				else if(strncmp_P(command, PSTR("cat "), 4) == 0)
-				{
-					command += 4;
-					if(command[0] == '\0')
-						continue;
-					
-					/* search file in current directory and open it */
-					struct fat_file_struct* fd = open_file_in_dir(fs, dd, command);
-					if(!fd)
-					{
-						uart_puts_p(PSTR("error opening "));
-						uart_puts(command);
-						uart_putc('\n');
-						continue;
-					}
-
-					/* print file contents */
-					uint8_t buffer[8];
-					uint32_t offset = 0;
-					intptr_t count;
-					while((count = fat_read_file(fd, buffer, sizeof(buffer))) > 0)
-					{
-						uart_putdw_hex(offset);
-						uart_putc(':');
-						for(intptr_t i = 0; i < count; ++i)
-						{
-							uart_putc(' ');
-							uart_putc_hex(buffer[i]);
-						}
-						uart_putc('\n');
-						offset += 8;
-					}
-
-					fat_close_file(fd);
-				}
-				else if(strcmp_P(command, PSTR("disk")) == 0)
-				{
-					if(!print_disk_info(fs))
-						uart_puts_p(PSTR("error reading disk info\n"));
-				}
-	#if FAT_WRITE_SUPPORT
-				else if(strncmp_P(command, PSTR("rm "), 3) == 0)
-				{
-					command += 3;
-					if(command[0] == '\0')
-						continue;
-					
-					struct fat_dir_entry_struct file_entry;
-					if(find_file_in_dir(fs, dd, command, &file_entry))
-					{
-						if(fat_delete_file(fs, &file_entry))
-							continue;
-					}
-
-					uart_puts_p(PSTR("error deleting file: "));
-					uart_puts(command);
-					uart_putc('\n');
-				}
-				else if(strncmp_P(command, PSTR("touch "), 6) == 0)
-				{
-					command += 6;
-					if(command[0] == '\0')
-						continue;
-
-					struct fat_dir_entry_struct file_entry;
-					if(!fat_create_file(dd, command, &file_entry))
-					{
-						uart_puts_p(PSTR("error creating file: "));
-						uart_puts(command);
-						uart_putc('\n');
-					}
-				}
-				else if(strncmp_P(command, PSTR("mv "), 3) == 0)
-				{
-					command += 3;
-					if(command[0] == '\0')
-						continue;
-
-					char* target = command;
-					while(*target != ' ' && *target != '\0')
-						++target;
-
-					if(*target == ' ')
-						*target++ = '\0';
-					else
-						continue;
-
-					struct fat_dir_entry_struct file_entry;
-					if(find_file_in_dir(fs, dd, command, &file_entry))
-					{
-						if(fat_move_file(fs, &file_entry, dd, target))
-							continue;
-					}
-
-					uart_puts_p(PSTR("error moving file: "));
-					uart_puts(command);
-					uart_putc('\n');
-				}
-				else if(strncmp_P(command, PSTR("write "), 6) == 0)
-				{
-					command += 6;
-					if(command[0] == '\0')
-						continue;
-
-					char* offset_value = command;
-					while(*offset_value != ' ' && *offset_value != '\0')
-						++offset_value;
-
-					if(*offset_value == ' ')
-						*offset_value++ = '\0';
-					else
-						continue;
-
-					/* search file in current directory and open it */
-					struct fat_file_struct* fd = open_file_in_dir(fs, dd, command);
-					if(!fd)
-					{
-						uart_puts_p(PSTR("error opening "));
-						uart_puts(command);
-						uart_putc('\n');
-						continue;
-					}
-
-					int32_t offset = strtolong(offset_value);
-					if(!fat_seek_file(fd, &offset, FAT_SEEK_SET))
-					{
-						uart_puts_p(PSTR("error seeking on "));
-						uart_puts(command);
-						uart_putc('\n');
-
-						fat_close_file(fd);
-						continue;
-					}
-
-					/* read text from the shell and write it to the file */
-					uint8_t data_len;
-					while(1)
-					{
-						/* give a different prompt */
-						uart_putc('<');
-						uart_putc(' ');
-
-						/* read one line of text */
-						data_len = read_line(buffer, sizeof(buffer));
-						if(!data_len)
-							break;
-
-						/* write text to file */
-						if(fat_write_file(fd, (uint8_t*) buffer, data_len) != data_len)
-						{
-							uart_puts_p(PSTR("error writing to file\n"));
-							break;
-						}
-					}
-
-					fat_close_file(fd);
-				}
-				else if(strncmp_P(command, PSTR("mkdir "), 6) == 0)
-				{
-					command += 6;
-					if(command[0] == '\0')
-						continue;
-
-					struct fat_dir_entry_struct dir_entry;
-					if(!fat_create_dir(dd, command, &dir_entry))
-					{
-						uart_puts_p(PSTR("error creating directory: "));
-						uart_puts(command);
-						uart_putc('\n');
-					}
-				}
-	#endif
-	#if SD_RAW_WRITE_BUFFERING
-				else if(strcmp_P(command, PSTR("sync")) == 0)
-				{
-					if(!sd_raw_sync())
-						uart_puts_p(PSTR("error syncing disk\n"));
-				}
-	#endif
-				else
-				{
-					uart_puts_p(PSTR("unknown command: "));
-					uart_puts(command);
-					uart_putc('\n');
-				}
-			}
-
-			/* close directory */
-			fat_close_dir(dd);
-
-			/* close file system */
-			fat_close(fs);
-
-			/* close partition */
-			partition_close(partition);
-	//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>End of SD Card communication>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
-
-}//end of sd_com
-
+//ili9341_settextsize(2);
 
 	
 	}//end of while
@@ -933,6 +681,70 @@ uint8_t nach_komma(uint32_t value)
 	temp = value/100;
 	return value-(temp*100);
 	
+	
+}
+uint16_t ReadADC(uint8_t ADCchannel)
+{
+ //select ADC channel with safety mask
+ ADMUX = (ADMUX & 0xF0) | (ADCchannel & 0x0F);
+ //single conversion mode
+ ADCSRA |= (1<<ADSC);
+ // wait until ADC conversion is complete
+ while( ADCSRA & (1<<ADSC) );
+ return ADC;
+}
+void showSD(uint8_t stat)
+{
+	//print SD Card Status
+	ili9341_setcursor(90,0);
+	printf("          ");
+	switch(stat)
+	{
+		case CLOSED:	printf("SD Closed");
+						break;
+		case OPENED:		printf("SD Open");
+						break;
+		case WRITING:	printf("SD Writing");
+						break;
+		case SYNCED:	printf("SD Synced");
+						break;
+	}
+}
+void showADC(void)//show output of ADC 1 + 2
+{
+	Temperature=ReadADC(1);
+	ili9341_setcursor(10,20);
+	printf("ADC1: %d", Temperature);
+	Temperature=ReadADC(2);
+	ili9341_setcursor(10,40);
+	printf("ADC2: %d", Temperature);
+	ili9341_setcursor(10,0);
+		//push button
+		if(JOY_PUSH && (!entprell))
+		{
+			printf("PUSH");
+		}
+		//horizontal
+		if(JOY_HOR LEFT)
+		{
+			printf("LEFT");
+		}else if(JOY_HOR RIGHT)
+		{
+			printf("RIGHT");
+		}
+		//vertical
+		if(JOY_VERT UP)
+		{
+			printf("UP");
+		}else if(JOY_VERT DOWN)
+		{
+			printf("DOWN");
+		}
+		if((JOY_HOR < 600) && (JOY_HOR>400) && (JOY_VERT<600) && (JOY_VERT>400) && !JOY_PUSH)
+		{
+			ili9341_setcursor(10,0);
+			printf("     ");
+		}
 	
 }
 
