@@ -11,7 +11,6 @@
 #include "grn_TWI.h"
 #include <avr/interrupt.h>
 #include "uart.h"
-
 #include <string.h>
 #include <avr/sleep.h>
 #include "fat.h"
@@ -21,8 +20,6 @@
 #include "sd_raw_config.h"
 
 #define DEBUG 1
-
-
 #define DPS310_W 0xee
 #define DPS310_R 0xef
 #define PRS_B2	0x00
@@ -52,7 +49,6 @@
 #define HIGH 3
 #define ULTRA 4
 
-
 //Compensation Scale Factors (Oversampling)
 #define Scal_1 524288 //sinlge
 #define Scal_2 1572864
@@ -62,8 +58,6 @@
 #define Scal_32 516096
 #define Scal_64 1040384
 #define Scal_128 2088960
-
-
 
 #define SENS_OP_STATUS 0x08
 
@@ -75,8 +69,6 @@
 #define MODE_BACKGROUND_TEMP 0x06
 #define MODE_BACKGROUND_PRES_AND_TEMP 0x07
 #define POINTCOLOUR PINK
-
-
 
 #define SENSOR_READY_CHECK (DPS310_read(MEAS_CFG) & (1<<6)) != 0
 #define COEFF_READY_CHECK (DPS310_read(MEAS_CFG) & (1<<7)) != 0
@@ -91,6 +83,8 @@
 #define DOWN > 600
 #define UP <400
 
+#define UPDATE_STATE state = sd_card("",CHECK)//check position in state machine
+
 //SD Card Actions
 #define NOT_USED 0
 #define CLOSE 1
@@ -100,17 +94,11 @@
 #define WRITE 5
 #define WRITING 6
 #define SYNC 7
-#define SYNCED 8
+#define SYNCING 8
 #define COMMUNICATE 9
 #define COMMUNICATING 10
 #define CHECK 11			//check Status
-
-
-
-
-
-
-
+#define NIL 12 //no specific action
 
 extern uint16_t vsetx,vsety,vactualx,vactualy,isetx,isety,iactualx,iactualy;
 static FILE mydata = FDEV_SETUP_STREAM(ili9341_putchar_printf, NULL, _FDEV_SETUP_WRITE);
@@ -118,10 +106,8 @@ uint8_t result,  xpos, error, x, value, rdy;
 uint16_t xx, yy, zell, COLOR, var_x,color;
 uint8_t messung=1;
 
-
-
 uint8_t sd_com; //flag sd card communication via uart on / off
-
+char sd_string[40] = "";
 
 //compensation coefficients
 int16_t m_C0;
@@ -134,7 +120,7 @@ int16_t m_C20;
 int16_t m_C21;
 int16_t m_C30;
 
-uint8_t buffer[3] = {0};
+//uint8_t buffer[3] = {0};
 uint8_t meas=0;
 uint8_t id=0;
 uint8_t pres_ovs, temp_ovs;
@@ -151,6 +137,10 @@ long Pressure;
 uint16_t Temperature;
 uint32_t altitude;
 uint32_t qnh;
+
+uint8_t state; //status state machine
+
+uint8_t messung;
 
 uint16_t posx, posy;
 
@@ -181,13 +171,12 @@ ISR (TIMER1_COMPA_vect)
 {
 	ms10++;
 	if(entprell != 0)entprell--;
-	if(ms10==10)	//10ms
+	if(ms10==10)	//100ms
 	{
 		ms10=0;
 		ms100++;
-		
 	}
-    if(ms100==10)	//100ms
+    if(ms100==10)	//sekunde
 	{
 		ms100=0;
 		sec++;
@@ -207,7 +196,7 @@ uint8_t nach_komma(uint32_t value);
 uint16_t ReadADC(uint8_t ADCchannel);
 void showADC(void);
 void showSD(uint8_t stat);
-uint8_t sd_card(const char * sddata, uint8_t action)
+uint8_t sd_card(const char * sddata, uint8_t sd_card_action)
 {
 	//when close != 0, sd_card can be closed
 	//else sd_card can be opened or be written
@@ -222,12 +211,6 @@ uint8_t sd_card(const char * sddata, uint8_t action)
 	struct fat_dir_entry_struct directory;
 	static uint8_t sd_status=CLOSED; //present status of SD Card open / closed / writing...
 	
-	//#define SD_OPEN  0
-	//#define SD_WRITE 1
-	//#define SD_CLOSE 2
-	
-	//if(close)action=SD_CLOSE;//close sd-card
-	
 	/* To add globaly
 	 * //SD Card Actions
 		#define NOT_USED 0
@@ -241,76 +224,82 @@ uint8_t sd_card(const char * sddata, uint8_t action)
 		#define SYNCED 8
 	*/
 	
-	
-	switch(action)
+	switch(sd_card_action)
 	{
-		case OPEN:	if(sd_status==CLOSED)// do only if closed
-					{
-							/* setup sd card slot */
-							if(!sd_raw_init())
-							{
-								uart_puts_p(PSTR("MMC/SD initialization failed\n"));
-							}
+		case CLOSE:		/* close directory */
+						fat_close_dir(dd);
+						/* close file system */
+						fat_close(fs);
+						/* close partition */
+						partition_close(partition);
+						sd_card_action=OPEN; //sd_card was closed. Next call is opening again
+						uart_puts("SD is closed...\n");
+						break;
+		
+		
+		case OPEN:		// setup sd card slot
+						if(!sd_raw_init())
+						{
+							uart_puts("Init failed...\n");
+						}
 
-							/* open first partition */
-							partition = partition_open(sd_raw_read,sd_raw_read_interval,sd_raw_write,sd_raw_write_interval,0);
-
+						// open first partition 
+						partition = partition_open(sd_raw_read,sd_raw_read_interval,sd_raw_write,sd_raw_write_interval,0);
+						if(!partition)
+						{
+							// If the partition did not open, assume the storage device
+							// is a "superfloppy", i.e. has no MBR.
+							partition = partition_open(sd_raw_read,sd_raw_read_interval,sd_raw_write,sd_raw_write_interval,-1);
 							if(!partition)
 							{
-								/* If the partition did not open, assume the storage device
-								 * is a "superfloppy", i.e. has no MBR.
-								 */
-								partition = partition_open(sd_raw_read,sd_raw_read_interval,sd_raw_write,sd_raw_write_interval,-1);
-								if(!partition)
-								{
-									uart_puts_p(PSTR("opening partition failed\n"));
-								}
+								uart_puts("opening partition failed...\n");
 							}
-
-							/* open file system */
-							struct fat_fs_struct* fs = fat_open(partition);
-							if(!fs)
-							{
-								uart_puts_p(PSTR("opening filesystem failed\n"));
-							}
-
-							/* open root directory */
-							fat_get_dir_entry_of_path(fs, "/", &directory);
-							dd = fat_open_dir(fs, &directory);
-							if(!dd)
-							{
-								uart_puts_p(PSTR("opening root directory failed\n"));
-							}
-									
-							/* print some card information as a boot message */
-							print_disk_info(fs);
-							sd_status=OPENED;
-						}else uart_puts_p(PSTR("SD Card already open\n"));
-						break;
-		case WRITE:	// file_pos now contains the absolute file position
-						//sprintf(string,"eins");
+						} 
+						 /* open file system */
+						fs = fat_open(partition);
+						if(!fs)
+						{
+							uart_puts("opening filesystem failed...\n");
+						}
+						/* open root directory */
+						struct fat_dir_entry_struct directory;
+						fat_get_dir_entry_of_path(fs, "/", &directory);
+						dd = fat_open_dir(fs, &directory);
+						if(!dd)
+						{
+							uart_puts("opening root directory failed...\n");
+						}
+						/* print some card information as a boot message */
+						print_disk_info(fs);
+						fd = open_file_in_dir(fs, dd, "log.txt");
+						if(!fd)
+						{
+							uart_puts("could not open log.txt\n");
+						}
+						uart_puts("SD is ready...\n");
+						sd_card_action=WRITE;//sd_card is opened, next step is sd_write
+					
+						
 						str_len=strlen((const char *)sddata);
 						fat_write_file(fd,(const uint8_t*)sddata,str_len);
-						sd_raw_sync();
-						//uart_puts("  writing sucessfull\n");
-						break;
-		case CLOSE:		if(sd_status==OPENED)
+						uart_puts(sddata);
+						if(!sd_raw_sync())
 						{
-							/*sync data... just to be save...*/
-							sd_raw_sync();
-							/* close directory */
-							fat_close_dir(dd);
-							/* close file system */
-							fat_close(fs);
-							/* close partition */
-							partition_close(partition);
-							
-							uart_puts_p(PSTR("SD Card is closed\n"));
-							sd_status=CLOSED;
-						}else uart_puts_p(PSTR("SD Card already closed\n"));
+							uart_puts_p(PSTR("error syncing disk\n"));
+						}
+						/* close directory */
+						fat_close_dir(dd);
+						/* close file system */
+						fat_close(fs);
+						/* close partition */
+						partition_close(partition);
+						
+						uart_puts("SD is closed...\n");
 						break;
-	}//end of switch
-	showSD(sd_status);
+	
+	}//end of switch(status)
+
+	
 	return sd_status;
 }//end of sd_card()
 
@@ -338,6 +327,9 @@ int main(void)
 	tt=0;
 	log_pos=0;
 	qnh=101525;
+	uint8_t log=0;
+	state=CLOSED;
+	messung=0;
 	
 	TWIInit();
 	//Timer 1 Configuration
@@ -365,14 +357,14 @@ int main(void)
 	
 	while(1)
 	{
+					
 		if(1)
 		{	
-			messung=0;	
+			//messung=0;	
 			if(TEMP_READY_CHECK)
 			{
 				showADC();
 			
-				
 				Temperature=DPS310_get_temp(temp_ovs);
 				ili9341_setcursor(10,120);
 				printf("T: %d C", Temperature);
@@ -383,6 +375,10 @@ int main(void)
 				ili9341_setcursor(10,210);
 				printf("P: %d.%1.2d hPa", vor_komma(Pressure), nach_komma(Pressure));
 				altitude = calcalt(Pressure, qnh);
+				sprintf(string,"T: %d.%dC \n", vor_komma(Temperature), nach_komma(Temperature));
+				sd_card(string, OPEN);
+				while(1);
+				
 			}
 						
 			if(PRES_READY_CHECK)
@@ -391,21 +387,7 @@ int main(void)
 				tt++;
 			}
 		}//end of messung
-		if(JOY_PUSH && (!entprell))
-		{
-			ili9341_setcursor(10,0);
-			printf("PUSH");
-			if(sd_card("n",CHECK)==CLOSED)
-			{
-				sd_card("",OPEN);
-			}else if(sd_card("n",CHECK)==OPENED)sd_card("b",CLOSE);
-		}
-	
-	
 
-//ili9341_settextsize(2);
-
-	
 	}//end of while
 
 }//end of main
@@ -702,11 +684,13 @@ void showSD(uint8_t stat)
 	{
 		case CLOSED:	printf("SD Closed");
 						break;
-		case OPENED:		printf("SD Open");
+		case OPENED:	printf("SD Open");
 						break;
-		case WRITING:	printf("SD Writing");
+		case WRITING:	printf("SD WRITING");
 						break;
-		case SYNCED:	printf("SD Synced");
+		case SYNCING:	printf("SD Syncing");
+						break;
+		default:		printf("?????");
 						break;
 	}
 }

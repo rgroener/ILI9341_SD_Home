@@ -169,7 +169,7 @@ static uint8_t sd_raw_send_command(uint8_t command, uint32_t arg);
  *
  * \returns 0 on failure, 1 on success.
  */
-uint8_t sd_raw_init()
+uint8_t sd_raw_init(void)
 {
     /* enable inputs for reading card status */
     configure_pin_available();
