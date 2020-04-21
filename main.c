@@ -84,6 +84,7 @@
 #define UP <400
 
 #define UPDATE_STATE state = sd_card("",CHECK)//check position in state machine
+#define RELOAD_ENTPRELL 100
 
 //SD Card Actions
 #define NOT_USED 0
@@ -109,6 +110,16 @@ uint8_t messung=1;
 uint8_t sd_com; //flag sd card communication via uart on / off
 char sd_string[40] = "";
 
+
+uint8_t str_len=0;//length of string
+	struct fat_file_struct* fd;
+	struct fat_dir_struct* dd;
+	struct fat_fs_struct* fs;
+	struct partition_struct* partition;
+
+
+
+
 //compensation coefficients
 int16_t m_C0;
 int16_t m_C1;
@@ -133,6 +144,7 @@ uint8_t buff[6]= {0};
 //logging function
 uint16_t log_pos;
 
+
 long Pressure;
 uint16_t Temperature;
 uint32_t altitude;
@@ -140,7 +152,7 @@ uint32_t qnh;
 
 uint8_t state; //status state machine
 
-uint8_t messung;
+uint8_t messung, count;
 
 uint16_t posx, posy;
 
@@ -190,125 +202,21 @@ ISR (TIMER1_COMPA_vect)
 	}
 }
 long calcalt(double press, uint32_t pressealevel);
-
+uint32_t xxx;
 uint16_t vor_komma(uint32_t value);
 uint8_t nach_komma(uint32_t value);
 uint16_t ReadADC(uint8_t ADCchannel);
 void showADC(void);
 void showSD(uint8_t stat);
-uint8_t sd_card(const char * sddata, uint8_t sd_card_action)
-{
-	//when close != 0, sd_card can be closed
-	//else sd_card can be opened or be written
-	
-//	static uint8_t error=0;
-	static uint8_t str_len=0;
-	
-	static struct partition_struct* partition;
-	static struct fat_fs_struct* fs;
-	static struct fat_dir_struct* dd;
-	static struct fat_file_struct* fd;
-	struct fat_dir_entry_struct directory;
-	static uint8_t sd_status=CLOSED; //present status of SD Card open / closed / writing...
-	
-	/* To add globaly
-	 * //SD Card Actions
-		#define NOT_USED 0
-		#define CLOSE 1
-		#define CLOSED 2
-		#define OPEN 3
-		#define OPENED 4 
-		#define WRITE 5
-		#define WRITING 6
-		#define SYNC 7
-		#define SYNCED 8
-	*/
-	
-	switch(sd_card_action)
-	{
-		case CLOSE:		/* close directory */
-						fat_close_dir(dd);
-						/* close file system */
-						fat_close(fs);
-						/* close partition */
-						partition_close(partition);
-						sd_card_action=OPEN; //sd_card was closed. Next call is opening again
-						uart_puts("SD is closed...\n");
-						break;
-		
-		
-		case OPEN:		// setup sd card slot
-						if(!sd_raw_init())
-						{
-							uart_puts("Init failed...\n");
-						}
-
-						// open first partition 
-						partition = partition_open(sd_raw_read,sd_raw_read_interval,sd_raw_write,sd_raw_write_interval,0);
-						if(!partition)
-						{
-							// If the partition did not open, assume the storage device
-							// is a "superfloppy", i.e. has no MBR.
-							partition = partition_open(sd_raw_read,sd_raw_read_interval,sd_raw_write,sd_raw_write_interval,-1);
-							if(!partition)
-							{
-								uart_puts("opening partition failed...\n");
-							}
-						} 
-						 /* open file system */
-						fs = fat_open(partition);
-						if(!fs)
-						{
-							uart_puts("opening filesystem failed...\n");
-						}
-						/* open root directory */
-						struct fat_dir_entry_struct directory;
-						fat_get_dir_entry_of_path(fs, "/", &directory);
-						dd = fat_open_dir(fs, &directory);
-						if(!dd)
-						{
-							uart_puts("opening root directory failed...\n");
-						}
-						/* print some card information as a boot message */
-						print_disk_info(fs);
-						fd = open_file_in_dir(fs, dd, "log.txt");
-						if(!fd)
-						{
-							uart_puts("could not open log.txt\n");
-						}
-						uart_puts("SD is ready...\n");
-						sd_card_action=WRITE;//sd_card is opened, next step is sd_write
-					
-						
-						str_len=strlen((const char *)sddata);
-						fat_write_file(fd,(const uint8_t*)sddata,str_len);
-						uart_puts(sddata);
-						if(!sd_raw_sync())
-						{
-							uart_puts_p(PSTR("error syncing disk\n"));
-						}
-						/* close directory */
-						fat_close_dir(dd);
-						/* close file system */
-						fat_close(fs);
-						/* close partition */
-						partition_close(partition);
-						
-						uart_puts("SD is closed...\n");
-						break;
-	
-	}//end of switch(status)
-
-	
-	return sd_status;
-}//end of sd_card()
-
 
 int main(void)
 {
 	
-	DDRC &= ~(1<<PC0); //Joystick Push Button
+	DDRC &= ~(1<<PC0); //TFT DC Pin
 	PORTC |= (1<<PC0);//Pullup Activate
+	
+	DDRD |= (1<<PD6);//CS SD Card
+	PORTD |= (1<<PD6);// High
 	
 	init_ili9341();
 	uart_init();
@@ -330,6 +238,9 @@ int main(void)
 	uint8_t log=0;
 	state=CLOSED;
 	messung=0;
+	count=0;
+	
+	
 	
 	TWIInit();
 	//Timer 1 Configuration
@@ -341,7 +252,7 @@ int main(void)
     TCCR1B |= (1 << CS12) | (1 << CS10);
     // set prescaler to 1024 and start the timer
     
-    //ADC
+   //ADC
     // Select Vref=AVcc
 	ADMUX |= (1<<REFS0);
 	//set prescaller to 128 and enable ADC 
@@ -355,16 +266,58 @@ int main(void)
 	/* we will just use ordinary idle mode */
     set_sleep_mode(SLEEP_MODE_IDLE);
 	
+	 /* setup sd card slot */
+				 if(!sd_raw_init())uart_puts_p(PSTR("MMC/SD initialization failed\n"));
+    
+				// open first partition 
+				partition = partition_open(sd_raw_read, sd_raw_read_interval, sd_raw_write, sd_raw_write_interval, 0);
+				 if(!partition)
+				{
+					/* If the partition did not open, assume the storage device
+					 * is a "superfloppy", i.e. has no MBR.
+					 */
+					partition = partition_open(sd_raw_read, sd_raw_read_interval, sd_raw_write, sd_raw_write_interval, -1);
+					if(!partition)uart_puts_p(PSTR("opening partition failed\n"));
+				}
+				 
+				 /* open file system */
+				fs = fat_open(partition);
+				if(!fs)uart_puts_p(PSTR("opening filesystem failed\n"));
+
+			 
+			 	/* open root directory */
+				struct fat_dir_entry_struct directory;
+				fat_get_dir_entry_of_path(fs, "/", &directory);
+
+				dd = fat_open_dir(fs, &directory);
+				if(!dd)uart_puts_p(PSTR("opening root directory failed\n"));
+			
+				/* print some card information as a boot message */
+				print_disk_info(fs);
+						
+				/* open file */		
+				fd = open_file_in_dir(fs, dd, "data.txt");
+				if(!fd)uart_puts("could not open data.txt\n");
+				
+				
+				uart_puts("Initialisation success\n");
+				
+			
+				
+				
+			
+				///////////////////////////////////////////////////////////////////////////////////
 	while(1)
 	{
-					
-		if(1)
+		
+		if(messung)
 		{	
-			//messung=0;	
+			messung=0;	
 			if(TEMP_READY_CHECK)
 			{
 				showADC();
-			
+				count++;		
+				
 				Temperature=DPS310_get_temp(temp_ovs);
 				ili9341_setcursor(10,120);
 				printf("T: %d C", Temperature);
@@ -375,23 +328,61 @@ int main(void)
 				ili9341_setcursor(10,210);
 				printf("P: %d.%1.2d hPa", vor_komma(Pressure), nach_komma(Pressure));
 				altitude = calcalt(Pressure, qnh);
-				sprintf(string,"T: %d.%dC \n", vor_komma(Temperature), nach_komma(Temperature));
-				sd_card(string, OPEN);
-				while(1);
 				
+				if(log)
+				{
+					sprintf(string,"%d,\t ", count);
+					str_len=strlen((const char *)string);
+					fat_write_file(fd,(const uint8_t*)string,str_len);
+					sd_raw_sync();
+					uart_puts(string);
+					sprintf(string,"Temperature: %d.%dC,\t ", vor_komma(Temperature), nach_komma(Temperature),count);
+					str_len=strlen((const char *)string);
+					fat_write_file(fd,(const uint8_t*)string,str_len);
+					sd_raw_sync();
+					uart_puts(string);
+					sprintf(string,"Pressure (QNH): %d.%1.2d hPa \n", vor_komma(Pressure), nach_komma(Pressure));
+					str_len=strlen((const char *)string);
+					fat_write_file(fd,(const uint8_t*)string,str_len);
+					sd_raw_sync();
+					uart_puts(string);
+					
+				}
 			}
+						
+			
+		}//end of messung
 						
 			if(PRES_READY_CHECK)
 			{
 				Pressure=DPS310_get_pres(temp_ovs, pres_ovs);
 				tt++;
 			}
-		}//end of messung
+			if((JOY_HOR RIGHT) && !entprell)
+			{
+				entprell = RELOAD_ENTPRELL;
+				
+				log=1  ;
+			}
+			
+			if((JOY_HOR LEFT) && !entprell)
+			{
+				entprell = RELOAD_ENTPRELL;
+				fat_close_file(fd);
+				/* close directory */
+				fat_close_dir(dd);
+				/* close file system */
+				fat_close(fs);
+				/* close partition */
+				partition_close(partition);
+				uart_puts("SD is closed...\n");
+				log=0;
+			}
+			
 
 	}//end of while
 
 }//end of main
-
 
 uint8_t DPS310_read(uint8_t reg)
 {

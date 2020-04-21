@@ -85,8 +85,8 @@ extern "C"
     #define configure_pin_ss() DDRB |= (1 << DDB2)
     #define configure_pin_miso() DDRB &= ~(1 << DDB4)
 
-    #define select_card() PORTB &= ~(1 << PORTB6)
-    #define unselect_card() PORTB |= (1 << PORTB6)
+    #define select_card() PORTD &= ~(1 << PORTD6)
+    #define unselect_card() PORTD |= (1 << PORTD6)
 #elif defined(__AVR_ATmega16__) || \
       defined(__AVR_ATmega32__)
     #define configure_pin_mosi() DDRB |= (1 << DDB5)
@@ -104,8 +104,8 @@ extern "C"
     #define configure_pin_ss() DDRB |= (1 << DDB0)
     #define configure_pin_miso() DDRB &= ~(1 << DDB3)
 
-    #define select_card() PORTB &= ~(1 << PORTB2)
-    #define unselect_card() PORTB |= (1 << PORTB2)
+    #define select_card() PORTB &= ~(1 << PORTB6)
+    #define unselect_card() PORTB |= (1 << PORTB6)
 #else
     #error "no sd/mmc pin mapping available!"
 #endif
