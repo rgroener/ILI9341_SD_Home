@@ -107,18 +107,6 @@ uint8_t result,  xpos, error, x, value, rdy;
 uint16_t xx, yy, zell, COLOR, var_x,color;
 uint8_t messung=1;
 
-uint8_t sd_com; //flag sd card communication via uart on / off
-char sd_string[40] = "";
-
-
-uint8_t str_len=0;//length of string
-	struct fat_file_struct* fd;
-	struct fat_dir_struct* dd;
-	struct fat_fs_struct* fs;
-	struct partition_struct* partition;
-
-
-
 
 //compensation coefficients
 int16_t m_C0;
@@ -152,7 +140,8 @@ uint32_t qnh;
 
 uint8_t state; //status state machine
 
-uint8_t messung, count;
+uint8_t messung;
+uint32_t count;
 
 uint16_t posx, posy;
 
@@ -172,12 +161,74 @@ uint32_t DPS310_get_sc_temp(uint8_t oversampling);
 long DPS310_get_temp(uint8_t oversampling);
 double DPS310_get_pres(uint8_t t_ovrs, uint8_t p_ovrs);
 
+
+
+//Variablen SD-Card
+uint8_t sd_com; //flag sd card communication via uart on / off
+char sd_string[40] = "";
+uint8_t str_len=0;//length of string
+struct fat_file_struct* fd;
+struct fat_dir_struct* dd;
+struct fat_fs_struct* fs;
+struct partition_struct* partition;
+struct fat_dir_entry_struct directory;
+
 //Prototypen SD-Card
 static uint8_t read_line(char* buffer, uint8_t buffer_length);
 static uint32_t strtolong(const char* str);
 static uint8_t find_file_in_dir(struct fat_fs_struct* fs, struct fat_dir_struct* dd, const char* name, struct fat_dir_entry_struct* dir_entry);
 static struct fat_file_struct* open_file_in_dir(struct fat_fs_struct* fs, struct fat_dir_struct* dd, const char* name); 
 static uint8_t print_disk_info(const struct fat_fs_struct* fs);
+void sd_card_init(void)
+{
+	/* we will just use ordinary idle mode */
+    set_sleep_mode(SLEEP_MODE_IDLE);
+	
+	 /* setup sd card slot */
+	 if(!sd_raw_init())uart_puts_p(PSTR("MMC/SD initialization failed\n"));
+    
+	// open first partition 
+	partition = partition_open(sd_raw_read, sd_raw_read_interval, sd_raw_write, sd_raw_write_interval, 0);
+	if(!partition)
+	{
+		/* If the partition did not open, assume the storage device
+		 * is a "superfloppy", i.e. has no MBR.
+		 */
+		partition = partition_open(sd_raw_read, sd_raw_read_interval, sd_raw_write, sd_raw_write_interval, -1);
+		if(!partition)uart_puts_p(PSTR("opening partition failed\n"));
+	}
+				 
+	/* open file system */
+	fs = fat_open(partition);
+	if(!fs)uart_puts_p(PSTR("opening filesystem failed\n"));
+			 
+ 	/* open root directory */
+	
+	fat_get_dir_entry_of_path(fs, "/", &directory);
+
+	dd = fat_open_dir(fs, &directory);
+	if(!dd)uart_puts_p(PSTR("opening root directory failed\n"));
+			
+	/* print some card information as a boot message */
+	print_disk_info(fs);
+						
+	/* open file */		
+	fd = open_file_in_dir(fs, dd, "data.txt");
+	if(!fd)uart_puts("could not open data.txt\n");
+				
+	uart_puts("Initialisation success\n");
+}
+void sd_card_close(void)
+{
+	fat_close_file(fd);
+	/* close directory */
+	fat_close_dir(dd);
+	/* close file system */
+	fat_close(fs);
+	/* close partition */
+	partition_close(partition);
+	uart_puts("SD is closed...\n");
+}
 
 ISR (TIMER1_COMPA_vect)
 {
@@ -208,6 +259,8 @@ uint8_t nach_komma(uint32_t value);
 uint16_t ReadADC(uint8_t ADCchannel);
 void showADC(void);
 void showSD(uint8_t stat);
+
+
 
 int main(void)
 {
@@ -262,43 +315,9 @@ int main(void)
     // enable interrupts
 		
 	DPS310_init(ULTRA);
+	sd_card_init();
 	
-	/* we will just use ordinary idle mode */
-    set_sleep_mode(SLEEP_MODE_IDLE);
 	
-	 /* setup sd card slot */
-	 if(!sd_raw_init())uart_puts_p(PSTR("MMC/SD initialization failed\n"));
-    
-	// open first partition 
-	partition = partition_open(sd_raw_read, sd_raw_read_interval, sd_raw_write, sd_raw_write_interval, 0);
-	if(!partition)
-	{
-		/* If the partition did not open, assume the storage device
-		 * is a "superfloppy", i.e. has no MBR.
-		 */
-		partition = partition_open(sd_raw_read, sd_raw_read_interval, sd_raw_write, sd_raw_write_interval, -1);
-		if(!partition)uart_puts_p(PSTR("opening partition failed\n"));
-	}
-				 
-	/* open file system */
-	fs = fat_open(partition);
-	if(!fs)uart_puts_p(PSTR("opening filesystem failed\n"));
-			 
- 	/* open root directory */
-	struct fat_dir_entry_struct directory;
-	fat_get_dir_entry_of_path(fs, "/", &directory);
-
-	dd = fat_open_dir(fs, &directory);
-	if(!dd)uart_puts_p(PSTR("opening root directory failed\n"));
-			
-	/* print some card information as a boot message */
-	print_disk_info(fs);
-						
-	/* open file */		
-	fd = open_file_in_dir(fs, dd, "data.txt");
-	if(!fd)uart_puts("could not open data.txt\n");
-				
-	uart_puts("Initialisation success\n");
 				
 			
 				
@@ -329,12 +348,13 @@ int main(void)
 				
 				if(log)
 				{
-					sprintf(string,"%d,\t ", count);
+				
+					sprintf(string,"%lu\t ", count);
 					str_len=strlen((const char *)string);
 					fat_write_file(fd,(const uint8_t*)string,str_len);
 					sd_raw_sync();
 					uart_puts(string);
-					sprintf(string,"Temperature: %d.%dC, %d\t ", vor_komma(Temperature), nach_komma(Temperature),count);
+					sprintf(string,"Temperature: %d.%dC\t", vor_komma(Temperature), nach_komma(Temperature));
 					str_len=strlen((const char *)string);
 					fat_write_file(fd,(const uint8_t*)string,str_len);
 					sd_raw_sync();
@@ -366,14 +386,7 @@ int main(void)
 			if((JOY_HOR LEFT) && !entprell)
 			{
 				entprell = RELOAD_ENTPRELL;
-				fat_close_file(fd);
-				/* close directory */
-				fat_close_dir(dd);
-				/* close file system */
-				fat_close(fs);
-				/* close partition */
-				partition_close(partition);
-				uart_puts("SD is closed...\n");
+				sd_card_close();
 				log=0;
 			}
 			
