@@ -24,7 +24,7 @@
  * \author Roland Riegel
  */
 
-#if DOXYGEN || SWAP_NEEDED
+#if SWAP_NEEDED
 
 /**
  * \internal

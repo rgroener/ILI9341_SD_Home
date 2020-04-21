@@ -267,40 +267,38 @@ int main(void)
     set_sleep_mode(SLEEP_MODE_IDLE);
 	
 	 /* setup sd card slot */
-				 if(!sd_raw_init())uart_puts_p(PSTR("MMC/SD initialization failed\n"));
+	 if(!sd_raw_init())uart_puts_p(PSTR("MMC/SD initialization failed\n"));
     
-				// open first partition 
-				partition = partition_open(sd_raw_read, sd_raw_read_interval, sd_raw_write, sd_raw_write_interval, 0);
-				 if(!partition)
-				{
-					/* If the partition did not open, assume the storage device
-					 * is a "superfloppy", i.e. has no MBR.
-					 */
-					partition = partition_open(sd_raw_read, sd_raw_read_interval, sd_raw_write, sd_raw_write_interval, -1);
-					if(!partition)uart_puts_p(PSTR("opening partition failed\n"));
-				}
+	// open first partition 
+	partition = partition_open(sd_raw_read, sd_raw_read_interval, sd_raw_write, sd_raw_write_interval, 0);
+	if(!partition)
+	{
+		/* If the partition did not open, assume the storage device
+		 * is a "superfloppy", i.e. has no MBR.
+		 */
+		partition = partition_open(sd_raw_read, sd_raw_read_interval, sd_raw_write, sd_raw_write_interval, -1);
+		if(!partition)uart_puts_p(PSTR("opening partition failed\n"));
+	}
 				 
-				 /* open file system */
-				fs = fat_open(partition);
-				if(!fs)uart_puts_p(PSTR("opening filesystem failed\n"));
-
+	/* open file system */
+	fs = fat_open(partition);
+	if(!fs)uart_puts_p(PSTR("opening filesystem failed\n"));
 			 
-			 	/* open root directory */
-				struct fat_dir_entry_struct directory;
-				fat_get_dir_entry_of_path(fs, "/", &directory);
+ 	/* open root directory */
+	struct fat_dir_entry_struct directory;
+	fat_get_dir_entry_of_path(fs, "/", &directory);
 
-				dd = fat_open_dir(fs, &directory);
-				if(!dd)uart_puts_p(PSTR("opening root directory failed\n"));
+	dd = fat_open_dir(fs, &directory);
+	if(!dd)uart_puts_p(PSTR("opening root directory failed\n"));
 			
-				/* print some card information as a boot message */
-				print_disk_info(fs);
+	/* print some card information as a boot message */
+	print_disk_info(fs);
 						
-				/* open file */		
-				fd = open_file_in_dir(fs, dd, "data.txt");
-				if(!fd)uart_puts("could not open data.txt\n");
+	/* open file */		
+	fd = open_file_in_dir(fs, dd, "data.txt");
+	if(!fd)uart_puts("could not open data.txt\n");
 				
-				
-				uart_puts("Initialisation success\n");
+	uart_puts("Initialisation success\n");
 				
 			
 				
@@ -336,7 +334,7 @@ int main(void)
 					fat_write_file(fd,(const uint8_t*)string,str_len);
 					sd_raw_sync();
 					uart_puts(string);
-					sprintf(string,"Temperature: %d.%dC,\t ", vor_komma(Temperature), nach_komma(Temperature),count);
+					sprintf(string,"Temperature: %d.%dC, %d\t ", vor_komma(Temperature), nach_komma(Temperature),count);
 					str_len=strlen((const char *)string);
 					fat_write_file(fd,(const uint8_t*)string,str_len);
 					sd_raw_sync();

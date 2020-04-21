@@ -10,6 +10,7 @@
 
 #ifndef BYTEORDERING_H
 #define BYTEORDERING_H
+#endif
 
 #include <stdint.h>
 
@@ -39,10 +40,8 @@ extern "C"
                      ((((uint32_t) (val)) & 0xff000000) >> 24)   \
                     )
 
-#if LITTLE_ENDIAN || __AVR__
+#if __AVR__
 #define SWAP_NEEDED 0
-#elif BIG_ENDIAN
-#define SWAP_NEEDED 1
 #else
 #error "Endianess undefined! Please define LITTLE_ENDIAN=1 or BIG_ENDIAN=1."
 #endif
@@ -104,7 +103,7 @@ extern "C"
 #define LTOH32(val) (val)
 #endif
 
-#if DOXYGEN
+
 
 /**
  * Converts a 16-bit integer from host byte order to little-endian byte order.
@@ -149,7 +148,7 @@ uint16_t ltoh16(uint16_t l);
  * \returns The given 32-bit integer converted to host byte order.
  */
 uint32_t ltoh32(uint32_t l);
-
+/*
 #elif SWAP_NEEDED
 
 #define htol16(h) swap16(h)
@@ -158,13 +157,13 @@ uint32_t ltoh32(uint32_t l);
 #define ltoh32(l) swap32(l)
 
 #else
-
+*/
 #define htol16(h) (h)
 #define htol32(h) (h)
 #define ltoh16(l) (l)
 #define ltoh32(l) (l)
 
-#endif
+//#endif
 
 uint16_t read16(const uint8_t* p);
 uint32_t read32(const uint8_t* p);
@@ -184,5 +183,5 @@ uint32_t swap32(uint32_t i);
 }
 #endif
 
-#endif
+
 

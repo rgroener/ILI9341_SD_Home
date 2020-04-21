@@ -478,7 +478,7 @@ cluster_t fat_get_next_cluster(const struct fat_fs_struct* fs, cluster_t cluster
     return cluster_num;
 }
 
-#if DOXYGEN || FAT_WRITE_SUPPORT
+#if FAT_WRITE_SUPPORT
 /**
  * \ingroup fat_fs
  * Appends a new cluster chain to an existing one.
@@ -630,7 +630,7 @@ cluster_t fat_append_clusters(struct fat_fs_struct* fs, cluster_t cluster_num, c
 }
 #endif
 
-#if DOXYGEN || FAT_WRITE_SUPPORT
+#if FAT_WRITE_SUPPORT
 /**
  * \ingroup fat_fs
  * Frees a cluster chain, or a part thereof.
@@ -733,7 +733,7 @@ uint8_t fat_free_clusters(struct fat_fs_struct* fs, cluster_t cluster_num)
 }
 #endif
 
-#if DOXYGEN || FAT_WRITE_SUPPORT
+#if FAT_WRITE_SUPPORT
 /**
  * \ingroup fat_fs
  * Frees a part of a cluster chain and correctly terminates the rest.
@@ -778,7 +778,7 @@ uint8_t fat_terminate_clusters(struct fat_fs_struct* fs, cluster_t cluster_num)
 }
 #endif
 
-#if DOXYGEN || FAT_WRITE_SUPPORT
+#if FAT_WRITE_SUPPORT
 /**
  * \ingroup fat_fs
  * Clears a single cluster.
@@ -807,7 +807,7 @@ uint8_t fat_clear_cluster(const struct fat_fs_struct* fs, cluster_t cluster_num)
 }
 #endif
 
-#if DOXYGEN || FAT_WRITE_SUPPORT
+#if FAT_WRITE_SUPPORT
 /**
  * \ingroup fat_fs
  * Callback function for clearing a cluster.
@@ -1071,7 +1071,7 @@ intptr_t fat_read_file(struct fat_file_struct* fd, uint8_t* buffer, uintptr_t bu
     return buffer_len;
 }
 
-#if DOXYGEN || FAT_WRITE_SUPPORT
+#if FAT_WRITE_SUPPORT
 /**
  * \ingroup fat_file
  * Writes data to a file.
@@ -1279,7 +1279,7 @@ uint8_t fat_seek_file(struct fat_file_struct* fd, int32_t* offset, uint8_t whenc
     return 1;
 }
 
-#if DOXYGEN || FAT_WRITE_SUPPORT
+#if FAT_WRITE_SUPPORT
 /**
  * \ingroup fat_file
  * Resizes a file to have a specific size.
@@ -1709,7 +1709,7 @@ uint8_t fat_dir_entry_read_callback(uint8_t* buffer, offset_t offset, void* p)
     }
 }
 
-#if DOXYGEN || FAT_LFN_SUPPORT
+#if FAT_LFN_SUPPORT
 /**
  * \ingroup fat_fs
  * Calculates the checksum for 8.3 names used within the
@@ -1728,7 +1728,7 @@ uint8_t fat_calc_83_checksum(const uint8_t* file_name_83)
 }
 #endif
 
-#if DOXYGEN || FAT_WRITE_SUPPORT
+#if FAT_WRITE_SUPPORT
 /**
  * \ingroup fat_fs
  * Searches for space where to store a directory entry.
@@ -1847,7 +1847,7 @@ offset_t fat_find_offset_for_dir_entry(struct fat_fs_struct* fs, const struct fa
 }
 #endif
 
-#if DOXYGEN || FAT_WRITE_SUPPORT
+#if FAT_WRITE_SUPPORT
 /**
  * \ingroup fat_fs
  * Writes a directory entry to disk.
@@ -2036,7 +2036,7 @@ uint8_t fat_write_dir_entry(const struct fat_fs_struct* fs, struct fat_dir_entry
 }
 #endif
 
-#if DOXYGEN || FAT_WRITE_SUPPORT
+#if FAT_WRITE_SUPPORT
 /**
  * \ingroup fat_file
  * Creates a file.
@@ -2099,7 +2099,7 @@ uint8_t fat_create_file(struct fat_dir_struct* parent, const char* file, struct 
 }
 #endif
 
-#if DOXYGEN || FAT_WRITE_SUPPORT
+#if FAT_WRITE_SUPPORT
 /**
  * \ingroup fat_file
  * Deletes a file or directory.
@@ -2159,7 +2159,7 @@ uint8_t fat_delete_file(struct fat_fs_struct* fs, struct fat_dir_entry_struct* d
 }
 #endif
 
-#if DOXYGEN || FAT_WRITE_SUPPORT
+#if FAT_WRITE_SUPPORT
 /**
  * \ingroup fat_file
  * Moves or renames a file.
@@ -2226,7 +2226,7 @@ uint8_t fat_move_file(struct fat_fs_struct* fs, struct fat_dir_entry_struct* dir
 }
 #endif
 
-#if DOXYGEN || FAT_WRITE_SUPPORT
+#if FAT_WRITE_SUPPORT
 /**
  * \ingroup fat_dir
  * Creates a directory.
@@ -2331,9 +2331,9 @@ uint8_t fat_create_dir(struct fat_dir_struct* parent, const char* dir, struct fa
  * \returns 0 on failure, 1 on success.
  * \see fat_create_dir
  */
-#ifdef DOXYGEN
+
 uint8_t fat_delete_dir(struct fat_fs_struct* fs, struct fat_dir_entry_struct* dir_entry);
-#endif
+
 
 /**
  * \ingroup fat_dir
@@ -2348,11 +2348,11 @@ uint8_t fat_delete_dir(struct fat_fs_struct* fs, struct fat_dir_entry_struct* di
  * \returns 0 on failure, 1 on success.
  * \see fat_create_dir, fat_delete_dir, fat_move_file
  */
-#ifdef DOXYGEN
-uint8_t fat_move_dir(struct fat_fs_struct* fs, struct fat_dir_entry_struct* dir_entry, struct fat_dir_struct* parent_new, const char* dir_new);
-#endif
 
-#if DOXYGEN || FAT_DATETIME_SUPPORT
+uint8_t fat_move_dir(struct fat_fs_struct* fs, struct fat_dir_entry_struct* dir_entry, struct fat_dir_struct* parent_new, const char* dir_new);
+
+
+#if FAT_DATETIME_SUPPORT
 /**
  * \ingroup fat_file
  * Returns the modification date of a file.
@@ -2373,7 +2373,7 @@ void fat_get_file_modification_date(const struct fat_dir_entry_struct* dir_entry
 }
 #endif
 
-#if DOXYGEN || FAT_DATETIME_SUPPORT
+#if FAT_DATETIME_SUPPORT
 /**
  * \ingroup fat_file
  * Returns the modification time of a file.
@@ -2394,7 +2394,7 @@ void fat_get_file_modification_time(const struct fat_dir_entry_struct* dir_entry
 }
 #endif
 
-#if DOXYGEN || (FAT_WRITE_SUPPORT && FAT_DATETIME_SUPPORT)
+#if (FAT_WRITE_SUPPORT && FAT_DATETIME_SUPPORT)
 /**
  * \ingroup fat_file
  * Sets the modification time of a date.
@@ -2416,7 +2416,7 @@ void fat_set_file_modification_date(struct fat_dir_entry_struct* dir_entry, uint
 }
 #endif
 
-#if DOXYGEN || (FAT_WRITE_SUPPORT && FAT_DATETIME_SUPPORT)
+#if (FAT_WRITE_SUPPORT && FAT_DATETIME_SUPPORT)
 /**
  * \ingroup fat_file
  * Sets the modification time of a file.
@@ -2528,7 +2528,7 @@ uint8_t fat_get_fs_free_16_callback(uint8_t* buffer, offset_t offset, void* p)
     return 1;
 }
 
-#if DOXYGEN || FAT_FAT32_SUPPORT
+#if FAT_FAT32_SUPPORT
 /**
  * \ingroup fat_fs
  * Callback function used for counting free clusters in a FAT32.

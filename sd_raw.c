@@ -648,7 +648,7 @@ uint8_t sd_raw_read_interval(offset_t offset, uint8_t* buffer, uintptr_t interva
 #endif
 }
 
-#if DOXYGEN || SD_RAW_WRITE_SUPPORT
+#if SD_RAW_WRITE_SUPPORT
 /**
  * \ingroup sd_raw
  * Writes raw data to the card.
@@ -756,7 +756,7 @@ uint8_t sd_raw_write(offset_t offset, const uint8_t* buffer, uintptr_t length)
 }
 #endif
 
-#if DOXYGEN || SD_RAW_WRITE_SUPPORT
+#if SD_RAW_WRITE_SUPPORT
 /**
  * \ingroup sd_raw
  * Writes a continuous data stream obtained from a callback function.
@@ -807,7 +807,7 @@ uint8_t sd_raw_write_interval(offset_t offset, uint8_t* buffer, uintptr_t length
 }
 #endif
 
-#if DOXYGEN || SD_RAW_WRITE_SUPPORT
+#if SD_RAW_WRITE_SUPPORT
 /**
  * \ingroup sd_raw
  * Writes the write buffer's content to the card.
